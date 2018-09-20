@@ -6,5 +6,11 @@ Source code in C langage of the software are provided in directory 'src'. Direct
 
 see :
 Chabrol O, Royer-Carenzi M, Pontarotti P, Didier G. 2017. 
-Detecting molecular basis of phenotypic convergence. bioRxiv
+[Detecting molecular basis of phenotypic convergence. bioRxiv](https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210X.13071)
 doi: 10.1101/137174.
+
+## library require
+ on ubuntu 18:
+`sudo apt install libgsl-dev
+sudo apt install libnlopt-dev libnlopt0`
+
