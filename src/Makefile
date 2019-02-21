@@ -14,8 +14,8 @@ CFLAGS = -I/usr/local/include -I/usr/include -Wall -Wno-char-subscripts -D_POSIX
 
 # linker and its options
 LD = $(CC)
-LDFLAGS =  -rdynamic -lm -lnlopt -lgsl -lgslcblas 
-LDFLAGS_TH =  -rdynamic -lm -lnlopt -lgsl -lgslcblas -D_REENTRANT -L/usr/local/lib -L/usr/lib/ -lpthread  
+LDFLAGS =  -g -rdynamic -lm -lnlopt -lgsl -lgslcblas
+LDFLAGS_TH = -g -rdynamic -lm -lnlopt -lgsl -lgslcblas -D_REENTRANT -L/usr/local/lib -L/usr/lib/ -lpthread
 
 ############ LIST OF EXECUTABLE TARGETS (MODIFY ONLY TO ADD AN EXECUTABLE) ##############
 
