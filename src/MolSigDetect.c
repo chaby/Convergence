@@ -90,11 +90,13 @@ typedef struct THREAD_PARAMETER {
 } TypeThreadParameter;
 
 static TypeConvergenceData getAlignmentConvergence(TypeTree *tree, int *character, TypeEvolutionModel *modelC, TypeAlignment *align, TypeThreadParameter *data, gsl_rng *rg);
+static double* getGammaValues(TypeTree *tree, int *character, TypeEvolutionModel *modelC, TypeAlignment *align, TypeThreadParameter *data, gsl_rng *rg);
 static void reindexAlignments(TypeAlignment *alignment, TypeLexiTree *dict);
 static int compareAlignmentData(void const *a, void const *b);
 static void correctBenjaminiHochberg(TypeAlignmentData *alignData, int size);
 static void fprintAlignmentData(FILE *f, TypeAlignmentData *alignData, int size);
 static void *threadAlignment(void *data);
+static void *threadAlignmentGamma(void *data);
 static char *getAlignmentName(char *filename);
 static int fillUnknown(TypeAlignment *align, double *unknown);
 static TypeInput fixInput(TypeTree *tree,  int *character, TypeAlignment *align, TypeLexiTree *dictTree);
@@ -262,7 +264,8 @@ int main(int argc, char *argv[]) {
 			param->fe = fe;
 			param->fr = fr;
 			param->number = &nT;
-			if((ret = pthread_create(&thread, NULL, threadAlignment, (void*) param)) == 0) {
+			//if((ret = pthread_create(&thread, NULL, threadAlignment, (void*) param)) == 0) {
+			if((ret = pthread_create(&thread, NULL, threadAlignmentGamma, (void*) param)) == 0) {
 				int err;
 				if((err = pthread_detach(thread)) == 0) {
 					nT++; i++; j++;
@@ -320,6 +323,64 @@ fprintf(stdout, "alignment %s %d/%d, %d running thread(s)\n", param->name, i-arg
 	time(&t1);
 	fprintf(stderr, "Computation time: %.0lf hours %.0lf mins %.0lf secs\n", floor(difftime(t1, t0)/(3600.)), floor(difftime(t1, t0)/(60.))-60.*floor(difftime(t1, t0)/(3600.)), difftime(t1, t0)-60.*floor(difftime(t1, t0)/(60.)));
 }
+
+
+void *threadAlignmentGamma(void *data) {
+	FILE *fa;
+	if((fa = fopen(((TypeThreadParameter*)data)->filename, "r"))) {
+		TypeAlignment *align;
+		align = readAlignment(fa, TYPE_ALIGNMENT_PROTEIN);
+		fclose(fa);
+		if(align != NULL) {
+//			gsl_rng *rg = gsl_rng_alloc(gsl_rng_taus);
+			gsl_rng *rg = gsl_rng_alloc(gsl_rng_ranlux389);
+			gsl_rng_set(rg, random_seed);
+			TypeEvolutionModel *modelC;
+			TypeInput input = fixInput(&(((TypeThreadParameter*)data)->tree), ((TypeThreadParameter*)data)->character, align, ((TypeThreadParameter*)data)->dict);
+			if(input.tree != &(((TypeThreadParameter*)data)->tree)) {
+				TypeEvolutionModel *model;
+				double best;
+				model = getEvolutionModelProt();
+				best = calibRate(input.tree, input.character, model, NULL, CALIB_SYMBOL_PROT, CALIB_VALUE);
+				model->freeModel(model);
+				modelC = getEvolutionModelProtStored(input.tree, best);
+			} else
+				modelC = cloneEvolutionModelProtStored(((TypeThreadParameter*)data)->model);
+			//conv = getGammaValues(input.tree, input.character, modelC, align, (TypeThreadParameter*)data, rg);
+				getGammaValues(input.tree, input.character, modelC, align, (TypeThreadParameter*)data, rg);
+//printf("alignment %s\tsize %d\tconv %d\tpvalue %.2le\n", ((TypeThreadParameter*)data)->name, align->size, conv.nSite, conv.pvalue);
+			gsl_rng_free(rg);
+			if(input.tree != &(((TypeThreadParameter*)data)->tree)) {
+				freeTree(input.tree);
+				free((void*)input.character);
+				modelC->freeModel(modelC);
+			} else
+				freeCloneEvolutionModelProtStored(modelC);
+			pthread_mutex_lock(((TypeThreadParameter*)data)->mutex_result);
+				((TypeThreadParameter*)data)->result->name = ((TypeThreadParameter*)data)->name;
+				((TypeThreadParameter*)data)->result->size = align->size;
+			pthread_mutex_unlock(((TypeThreadParameter*)data)->mutex_result);
+			freeAlignment(align);
+		} else {
+			pthread_mutex_lock(((TypeThreadParameter*)data)->mutex_error);
+			fprintf(((TypeThreadParameter*)data)->fe, "Error when reading %s\n", ((TypeThreadParameter*)data)->filename);
+			pthread_mutex_unlock(((TypeThreadParameter*)data)->mutex_error);
+			((TypeThreadParameter*)data)->result->name = NULL;
+		}
+	} else {
+		pthread_mutex_lock(((TypeThreadParameter*)data)->mutex_error);
+		fprintf(((TypeThreadParameter*)data)->fe, "Error when opening %s\n", ((TypeThreadParameter*)data)->filename);
+		pthread_mutex_unlock(((TypeThreadParameter*)data)->mutex_error);
+		((TypeThreadParameter*)data)->result->name = NULL;
+	}
+	pthread_mutex_lock(((TypeThreadParameter*)data)->mutex_number);
+		(*((TypeThreadParameter*)data)->number)--;
+		pthread_cond_signal(((TypeThreadParameter*)data)->cond_number);
+	pthread_mutex_unlock(((TypeThreadParameter*)data)->mutex_number);
+	free(data);
+	return NULL;
+}
+
 
 void *threadAlignment(void *data) {
 	FILE *fa;
@@ -405,6 +466,7 @@ TypeConvergenceData getAlignmentConvergence(TypeTree *tree, int *character, Type
 	alpha = estimateGammaParameter(tree, model, rg, align, param->nGam);
 	model->freeModel(model);
 	gamma = getGamma(alpha, param->nGam);
+	//*
 	column = (int*) malloc(tree->size*sizeof(int));
 	modelT = (TypeEvolutionModel**) malloc(param->nGam*sizeof(TypeEvolutionModel*));
 	unknown = (double*) malloc(align->number*sizeof(double));
@@ -519,7 +581,7 @@ printf("nSim %d max %.2lf val %.2lf %.1lf %.1lf [%.1lf, %.1lf] res %.2le (%d, %.
 	} while(max<confidence && gsl_cdf_binomial_Q(eff[i-2]-1, param->threshold, align->size)<sig_thre && nSim<MAX_SIMULATION);
 	if(param->fr != NULL) {
 		pthread_mutex_lock(param->mutex_report);
-			fprintf(param->fr, "%s\t%d\n", param->name, nSim);
+		fprintf(param->fr, "%s\t%d\n", param->name, nSim);
 		pthread_mutex_unlock(param->mutex_report);
 	}
 	if(nSim>=MAX_SIMULATION) {
@@ -594,6 +656,18 @@ printf("nSim %d max %.2lf val %.2lf %.1lf %.1lf [%.1lf, %.1lf] res %.2le (%d, %.
 	free((void*)occ);
 	free((void*)column);
 	return data;
+}
+
+
+double* getGammaValues(TypeTree *tree, int *character, TypeEvolutionModel *modelC, TypeAlignment *align, TypeThreadParameter *param, gsl_rng *rg) {
+	double alpha, *gamma;
+	TypeEvolutionModel *model;
+	model = getEvolutionModelProt();
+	alpha = estimateGammaParameter(tree, model, rg, align, param->nGam);
+	model->freeModel(model);
+	gamma = getGamma(alpha, param->nGam);
+	
+	return gamma;
 }
 
 char getStatusChar(int status) {

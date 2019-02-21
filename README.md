@@ -11,6 +11,5 @@ doi: 10.1101/137174.
 
 ## library require
  on ubuntu 18:
-`sudo apt install libgsl-dev
-sudo apt install libnlopt-dev libnlopt0`
+`sudo apt install libgsl-dev libnlopt-dev libnlopt0`
 
